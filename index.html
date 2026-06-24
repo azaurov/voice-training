@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Voice Training</title>
+  <meta name="description" content="Practice public speaking and interview skills with voice recording and playback" />
+  <meta name="theme-color" content="#4F46E5" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="VoiceTrain" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Install Banner ─────────────────────────── -->
+  <div id="install-banner">
+    <div class="install-text">
+      <strong>Install Voice Training</strong>
+      Add to home screen for offline use
+    </div>
+    <button class="btn btn-secondary" id="btn-install" style="padding:8px 14px;font-size:.82rem;">Install</button>
+    <button class="btn-icon" id="btn-install-dismiss">✕</button>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SCREEN: Profile
+  ══════════════════════════════════════════════════ -->
+  <div id="screen-profile" class="screen">
+    <header class="app-header">
+      <div class="logo">🎙</div>
+      <div>
+        <h1>Voice Training</h1>
+        <div class="subtitle">Who's practicing today?</div>
+      </div>
+    </header>
+
+    <!-- Profile list -->
+    <div id="profile-list-section">
+      <p class="section-title">Select your profile</p>
+      <div id="profile-list" class="profile-list"></div>
+      <button class="btn btn-secondary" id="btn-add-profile" style="margin-top:4px;">+ New Profile</button>
+    </div>
+
+    <!-- Create profile form -->
+    <div id="profile-create-section" style="display:none;">
+      <p class="section-title">Create your profile</p>
+      <div id="emoji-picker" class="emoji-picker"></div>
+      <input type="text" id="profile-name-input" class="text-input" placeholder="Your name" maxlength="30" autocomplete="name" />
+      <div id="create-error" class="status-bar error" style="text-align:left;margin-top:-8px;"></div>
+      <button class="btn btn-primary" id="btn-save-profile">Get Started</button>
+      <button class="btn btn-secondary" id="btn-cancel-create" style="width:100%;justify-content:center;margin-top:4px;">Cancel</button>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SCREEN: Home
+  ══════════════════════════════════════════════════ -->
+  <div id="screen-home" class="screen">
+    <header class="app-header">
+      <div class="logo">🎙</div>
+      <div style="flex:1;">
+        <h1>Voice Training</h1>
+        <div class="subtitle">Public speaking &amp; interview prep</div>
+      </div>
+      <div id="home-user"></div>
+    </header>
+
+    <p class="section-title">Choose a category</p>
+
+    <div class="category-grid">
+      <div class="category-card" data-cat="interview">
+        <div class="icon">💼</div>
+        <h3>Interview Prep</h3>
+        <p>Practice common behavioral and situational questions</p>
+        <div class="count">10 prompts</div>
+      </div>
+      <div class="category-card" data-cat="speaking">
+        <div class="icon">🎤</div>
+        <h3>Public Speaking</h3>
+        <p>Improve delivery, persuasion, and impromptu skills</p>
+        <div class="count">8 prompts</div>
+      </div>
+      <div class="category-card" data-cat="reading">
+        <div class="icon">📖</div>
+        <h3>Reading Aloud</h3>
+        <p>Train pacing, clarity, and vocal presence</p>
+        <div class="count">4 passages</div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div style="font-size:.8rem;color:var(--text-muted);line-height:1.6;text-align:center;padding:0 8px;">
+      All recordings stay on your device.<br/>No account needed &middot; Works offline after first visit.
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SCREEN: Prompt List
+  ══════════════════════════════════════════════════ -->
+  <div id="screen-list" class="screen">
+    <div style="display:flex;align-items:center;gap:8px;padding-top:16px;">
+      <button class="back-btn" id="back-list">‹ Back</button>
+      <h2 id="list-title" style="font-size:1.1rem;font-weight:700;"></h2>
+    </div>
+    <div id="prompt-list" class="prompt-list"></div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SCREEN: Recorder
+  ══════════════════════════════════════════════════ -->
+  <div id="screen-recorder" class="screen">
+    <div style="display:flex;align-items:center;gap:8px;padding-top:16px;">
+      <button class="back-btn" id="back-recorder">‹ Back</button>
+    </div>
+
+    <div class="prompt-card">
+      <div class="prompt-category" id="rec-category"></div>
+      <h2 id="rec-title"></h2>
+      <p class="prompt-text" id="rec-text"></p>
+    </div>
+
+    <div class="tip-box">
+      <span class="tip-icon">💡</span>
+      <span id="rec-tip"></span>
+    </div>
+
+    <div class="visualizer-wrap">
+      <canvas id="visualizer" width="568" height="56"></canvas>
+    </div>
+
+    <div id="timer" class="timer-display">00:00</div>
+    <div id="rec-target" class="timer-target"></div>
+
+    <div class="controls">
+      <button class="btn btn-secondary" id="btn-discard" disabled>Discard</button>
+      <button class="btn btn-record" id="btn-record" title="Record">🎙</button>
+      <button class="btn btn-play" id="btn-play" disabled title="Play back">▶</button>
+    </div>
+
+    <div id="status" class="status-bar"></div>
+
+    <div id="recordings-section" class="recordings-section" style="display:none;">
+      <h3>Your recordings</h3>
+      <div id="recordings-list"></div>
+    </div>
+  </div>
+
+</div><!-- /app -->
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

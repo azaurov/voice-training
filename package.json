@@ -1,0 +1,10 @@
+{
+  "name": "voice-training",
+  "version": "1.0.0",
+  "description": "PWA for public speaking and interview voice training",
+  "private": true,
+  "scripts": {
+    "dev": "python3 -m http.server 8743",
+    "start": "python3 -m http.server 8743"
+  }
+}
