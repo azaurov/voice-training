@@ -51,6 +51,21 @@ export async function deleteRecording(id) {
   });
 }
 
+export async function saveFeedback(id, feedback) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    const store = tx.objectStore(STORE);
+    const req = store.get(id);
+    req.onsuccess = e => {
+      const rec = e.target.result;
+      if (rec) { rec.feedback = feedback; store.put(rec); }
+    };
+    tx.oncomplete = resolve;
+    tx.onerror = e => reject(e.target.error);
+  });
+}
+
 export async function getUserRecordingCount(userId) {
   const db = await openDB();
   return new Promise((resolve, reject) => {

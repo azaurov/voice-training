@@ -1,8 +1,10 @@
 import { Timer } from '../components/timer.js';
 import { Visualizer } from '../components/visualizer.js';
 import { CATEGORY_META } from '../data/prompts.js';
-import { saveRecording, getRecordingsForPrompt, deleteRecording } from '../db/recordings.js';
+import { saveRecording, getRecordingsForPrompt, deleteRecording, saveFeedback } from '../db/recordings.js';
 import { getCurrentProfileId } from '../auth/profiles.js';
+import { getAIFeedback, getApiKey, getModelLabel, getSelectedModel, isTTSEnabled } from '../services/ai.js';
+import { speak, stop as ttsStop, feedbackToSpeech, isSupported as ttsSupported } from '../services/tts.js';
 
 export class RecorderScreen {
   constructor(el, { router }) {
@@ -18,6 +20,8 @@ export class RecorderScreen {
     this._currentAudio = null;
     this._category = null;
     this._prompt = null;
+    this._lastBlob = null;
+    this._lastRecId = null;
 
     this._bindControls();
   }
@@ -35,6 +39,7 @@ export class RecorderScreen {
     this._el.classList.remove('active');
     this._stopRecording(false);
     this._stopAudio();
+    ttsStop();
   }
 
   _bindControls() {
@@ -55,11 +60,15 @@ export class RecorderScreen {
     this._el.querySelector('#btn-discard').addEventListener('click', () => {
       this._stopAudio();
       this._lastBlob = null;
+      this._lastRecId = null;
       this._el.querySelector('#btn-play').disabled = true;
       this._el.querySelector('#btn-discard').disabled = true;
+      this._el.querySelector('#feedback-section').style.display = 'none';
       this._timer.reset();
       this._setStatus('Recording discarded.');
     });
+
+    this._el.querySelector('#btn-get-feedback').addEventListener('click', () => this._fetchFeedback());
   }
 
   _renderPrompt() {
@@ -73,13 +82,19 @@ export class RecorderScreen {
 
   _resetState() {
     this._stopAudio();
+    ttsStop();
     this._isRecording = false;
     this._lastBlob = null;
+    this._lastRecId = null;
     this._el.querySelector('#btn-record').textContent = '🎙';
     this._el.querySelector('#btn-record').classList.remove('recording');
     this._el.querySelector('#timer').classList.remove('recording');
     this._el.querySelector('#btn-play').disabled = true;
     this._el.querySelector('#btn-discard').disabled = true;
+    this._el.querySelector('#feedback-section').style.display = 'none';
+    this._el.querySelector('#feedback-result').style.display = 'none';
+    this._el.querySelector('#feedback-result').innerHTML = '';
+    this._el.querySelector('#transcript-input').value = '';
     this._timer.reset();
     this._setStatus('');
   }
@@ -154,28 +169,118 @@ export class RecorderScreen {
       mimeType,
       duration: elapsed,
       timestamp: Date.now(),
-      wpm: this._category === 'reading' ? this._calcWPM(this._prompt.text, elapsed) : null
+      wpm: this._category === 'reading' ? this._calcWPM(this._prompt.text, elapsed) : null,
+      feedback: null,
     };
 
     await saveRecording(rec);
+    this._lastRecId = rec.id;
     this._loadRecordings();
 
     this._el.querySelector('#btn-play').disabled = false;
     this._el.querySelector('#btn-discard').disabled = false;
 
+    this._el.querySelector('#feedback-section').style.display = '';
+    this._el.querySelector('#feedback-result').style.display = 'none';
+    this._el.querySelector('#feedback-result').innerHTML = '';
+    this._el.querySelector('#transcript-input').value = '';
+
     const target = this._prompt.duration;
     const diff = elapsed - target;
-    let feedback;
-    if (elapsed < 5) {
-      feedback = 'Recording saved.';
-    } else if (Math.abs(diff) <= 10) {
-      feedback = `Excellent pacing! Right on target (${Timer.format(elapsed)}).`;
-    } else if (diff < 0) {
-      feedback = `${Timer.format(elapsed)} recorded — ${Timer.format(-diff)} short of target. Try to expand.`;
-    } else {
-      feedback = `${Timer.format(elapsed)} recorded — ${Timer.format(diff)} over target. Try to be more concise.`;
+    let msg;
+    if (elapsed < 5)               msg = 'Recording saved.';
+    else if (Math.abs(diff) <= 10) msg = `Excellent pacing! Right on target (${Timer.format(elapsed)}).`;
+    else if (diff < 0)             msg = `${Timer.format(elapsed)} recorded — ${Timer.format(-diff)} short. Try to expand.`;
+    else                           msg = `${Timer.format(elapsed)} recorded — ${Timer.format(diff)} over. Try to be more concise.`;
+    this._setStatus(msg, 'success');
+  }
+
+  async _fetchFeedback() {
+    if (!this._lastRecId) return;
+
+    if (!getApiKey()) {
+      this._showFeedbackError('No API key — tap Settings (⚙) on the home screen to add a free OpenRouter key.');
+      return;
     }
-    this._setStatus(feedback, 'success');
+
+    const btn = this._el.querySelector('#btn-get-feedback');
+    btn.disabled = true;
+    btn.textContent = '⏳ Thinking…';
+    this._el.querySelector('#feedback-result').style.display = 'none';
+
+    try {
+      const transcript = this._el.querySelector('#transcript-input').value.trim();
+      const fb = await getAIFeedback({
+        category: this._category,
+        promptTitle: this._prompt.title,
+        promptText: this._prompt.text,
+        duration: this._timer.elapsed,
+        transcript,
+      });
+
+      const modelId = getSelectedModel();
+      const feedbackRecord = { ...fb, modelId, modelLabel: getModelLabel(modelId), timestamp: Date.now() };
+
+      await saveFeedback(this._lastRecId, feedbackRecord);
+      this._renderFeedback(feedbackRecord);
+      this._loadRecordings();
+
+      if (isTTSEnabled() && ttsSupported()) {
+        speak(feedbackToSpeech(fb));
+      }
+    } catch (err) {
+      this._showFeedbackError(err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '✨ Get AI Feedback';
+    }
+  }
+
+  _renderFeedback(fb) {
+    const result = this._el.querySelector('#feedback-result');
+    result.innerHTML = `
+      <div class="feedback-card">
+        <div class="feedback-meta">via ${fb.modelLabel}</div>
+        <p class="feedback-overall">${fb.overall}</p>
+        <div class="feedback-group">
+          <div class="feedback-group-title">✅ Strengths</div>
+          <ul class="feedback-list">${(fb.strengths || []).map(s => `<li>${s}</li>`).join('')}</ul>
+        </div>
+        <div class="feedback-group">
+          <div class="feedback-group-title">📈 To Improve</div>
+          <ul class="feedback-list">${(fb.improvements || []).map(i => `<li>${i}</li>`).join('')}</ul>
+        </div>
+        <div class="feedback-tip">💡 ${fb.tip}</div>
+        ${ttsSupported() ? `
+        <div class="feedback-tts-row">
+          <button class="btn btn-secondary btn-sm" id="btn-speak">🔊 Read Aloud</button>
+          <button class="btn btn-secondary btn-sm" id="btn-tts-stop" style="display:none">⏹ Stop</button>
+        </div>` : ''}
+      </div>`;
+    result.style.display = '';
+
+    if (ttsSupported()) {
+      const speakBtn = result.querySelector('#btn-speak');
+      const stopBtn  = result.querySelector('#btn-tts-stop');
+      speakBtn?.addEventListener('click', () => {
+        speak(feedbackToSpeech(fb), {
+          onEnd: () => { speakBtn.style.display = ''; stopBtn.style.display = 'none'; }
+        });
+        speakBtn.style.display = 'none';
+        stopBtn.style.display = '';
+      });
+      stopBtn?.addEventListener('click', () => {
+        ttsStop();
+        speakBtn.style.display = '';
+        stopBtn.style.display = 'none';
+      });
+    }
+  }
+
+  _showFeedbackError(msg) {
+    const result = this._el.querySelector('#feedback-result');
+    result.innerHTML = `<div class="feedback-error">${msg}</div>`;
+    result.style.display = '';
   }
 
   async _loadRecordings() {
@@ -195,15 +300,43 @@ export class RecorderScreen {
       el.className = 'recording-entry';
       const wpmBadge = rec.wpm ? ` · ${rec.wpm} WPM` : '';
       const date = new Date(rec.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const hasFeedback = !!rec.feedback;
       el.innerHTML = `
-        <div class="rec-info">
-          <div class="rec-label">${rec.label}</div>
-          <div class="rec-meta">${date} · ${Timer.format(rec.duration)}${wpmBadge}</div>
-        </div>
-        <div class="rec-actions">
-          <button class="btn-icon play-rec" title="Play">▶</button>
-          <button class="btn-icon danger del-rec" title="Delete">✕</button>
+        <div class="rec-row">
+          <div class="rec-info">
+            <div class="rec-label">${rec.label}</div>
+            <div class="rec-meta">${date} · ${Timer.format(rec.duration)}${wpmBadge}</div>
+          </div>
+          <div class="rec-actions">
+            <button class="btn-icon play-rec" title="Play">&#9654;</button>
+            ${hasFeedback ? '<button class="btn-icon fb-rec" title="View Feedback">&#x1F4AC;</button>' : ''}
+            <button class="btn-icon danger del-rec" title="Delete">&#x2715;</button>
+          </div>
         </div>`;
+
+      if (hasFeedback) {
+        const drawer = document.createElement('div');
+        drawer.className = 'rec-feedback-drawer';
+        drawer.style.display = 'none';
+        drawer.innerHTML = `
+          <div class="feedback-card compact">
+            <div class="feedback-meta">via ${rec.feedback.modelLabel || 'AI'}</div>
+            <p class="feedback-overall">${rec.feedback.overall}</p>
+            <div class="feedback-group">
+              <div class="feedback-group-title">✅ Strengths</div>
+              <ul class="feedback-list">${(rec.feedback.strengths || []).map(s => `<li>${s}</li>`).join('')}</ul>
+            </div>
+            <div class="feedback-group">
+              <div class="feedback-group-title">📈 To Improve</div>
+              <ul class="feedback-list">${(rec.feedback.improvements || []).map(i => `<li>${i}</li>`).join('')}</ul>
+            </div>
+            <div class="feedback-tip">💡 ${rec.feedback.tip}</div>
+          </div>`;
+        el.appendChild(drawer);
+        el.querySelector('.fb-rec').addEventListener('click', () => {
+          drawer.style.display = drawer.style.display === 'none' ? '' : 'none';
+        });
+      }
 
       const playBtn = el.querySelector('.play-rec');
       el.querySelector('.del-rec').addEventListener('click', async () => {
@@ -211,7 +344,6 @@ export class RecorderScreen {
         this._loadRecordings();
       });
       playBtn.addEventListener('click', () => this._playBlob(rec.blob, playBtn));
-
       list.appendChild(el);
     });
   }

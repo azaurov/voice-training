@@ -14,6 +14,10 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+
+<!-- Update available button (fixed top-right, shown when new SW version is ready) -->
+<button id="btn-update" title="Update app">↑ Update</button>
+
 <div id="app">
 
   <!-- ── Install Banner ─────────────────────────── -->
@@ -67,6 +71,7 @@
         <div class="subtitle">Public speaking &amp; interview prep</div>
       </div>
       <div id="home-user"></div>
+      <button class="btn-icon" id="btn-settings" title="Settings" style="flex-shrink:0;font-size:1.1rem;">⚙</button>
     </header>
 
     <p class="section-title">Choose a category</p>
@@ -144,10 +149,57 @@
 
     <div id="status" class="status-bar"></div>
 
+    <!-- AI Feedback section — shown after a recording is saved -->
+    <div id="feedback-section" class="feedback-section" style="display:none;">
+      <p class="section-title">AI FEEDBACK</p>
+      <textarea id="transcript-input" class="text-input transcript-input"
+        placeholder="Paste your transcript here for more specific feedback (optional)"
+        rows="3"></textarea>
+      <button class="btn btn-primary" id="btn-get-feedback">&#10024; Get AI Feedback</button>
+      <div id="feedback-result" style="display:none;"></div>
+    </div>
+
     <div id="recordings-section" class="recordings-section" style="display:none;">
       <h3>Your recordings</h3>
       <div id="recordings-list"></div>
     </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SCREEN: Settings
+  ══════════════════════════════════════════════════ -->
+  <div id="screen-settings" class="screen">
+    <div style="display:flex;align-items:center;gap:8px;padding-top:16px;">
+      <button class="back-btn" id="back-settings">&#8249; Back</button>
+      <h2 style="font-size:1.1rem;font-weight:700;">Settings</h2>
+    </div>
+
+    <p class="section-title">AI Feedback</p>
+    <div class="settings-group">
+      <label class="settings-label">
+        OpenRouter API Key
+        <a href="https://openrouter.ai/keys" target="_blank" rel="noopener" class="settings-link">Get free key &#8599;</a>
+      </label>
+      <input type="password" id="setting-api-key" class="text-input" placeholder="sk-or-v1-..." autocomplete="off" />
+      <p class="settings-hint">Free tier includes Gemini, Llama, Mistral &amp; more. No credit card required.</p>
+
+      <label class="settings-label" style="margin-top:12px;">AI Model</label>
+      <select id="setting-model" class="text-input select-input"></select>
+    </div>
+
+    <p class="section-title">Voice Output</p>
+    <div class="settings-group">
+      <label class="toggle-label">
+        <span>Read feedback aloud (TTS)</span>
+        <span class="toggle-wrap">
+          <input type="checkbox" id="setting-tts" class="toggle-input" />
+          <span class="toggle-slider"></span>
+        </span>
+      </label>
+    </div>
+
+    <button class="btn btn-primary" id="btn-save-settings">Save Settings</button>
+    <div id="settings-status" class="status-bar"></div>
   </div>
 
 </div><!-- /app -->

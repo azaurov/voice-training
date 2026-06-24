@@ -1,4 +1,4 @@
-const CACHE = 'voicetrain-v2';
+const CACHE = 'voicetrain-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -15,12 +15,15 @@ const ASSETS = [
   './src/screens/profile.js',
   './src/screens/home.js',
   './src/screens/list.js',
-  './src/screens/recorder.js'
+  './src/screens/recorder.js',
+  './src/screens/settings.js',
+  './src/services/ai.js',
+  './src/services/tts.js',
 ];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
-  self.skipWaiting();
+  // Do NOT skipWaiting here — let the update button control when to activate
 });
 
 self.addEventListener('activate', e => {
@@ -34,4 +37,9 @@ self.addEventListener('fetch', e => {
   e.respondWith(
     caches.match(e.request).then(cached => cached || fetch(e.request))
   );
+});
+
+// Allow the page to trigger activation via the update button
+self.addEventListener('message', e => {
+  if (e.data === 'SKIP_WAITING') self.skipWaiting();
 });
