@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Live Voice – test</title>
+  <meta name="theme-color" content="#4F46E5" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="live.css" />
+</head>
+<body>
+<div id="app">
+  <div class="screen active" id="screen-live">
+    <header class="app-header">
+      <div class="logo">🎙</div>
+      <div><h1>Live Voice</h1><div class="subtitle">Test page · speak and watch your voice</div></div>
+    </header>
+
+    <div class="live-canvas-wrap"><canvas id="live-canvas" height="220"></canvas></div>
+    <div class="legend"><span class="k pitch">pitch</span><span class="k loud">loudness</span><span class="k pause">pause</span></div>
+
+    <div class="stat-grid">
+      <div class="stat"><div class="v" id="st-wpm">–</div><div class="l">words / min <span id="st-pace"></span></div></div>
+      <div class="stat"><div class="v" id="st-fill">0</div><div class="l">possible fillers</div></div>
+      <div class="stat"><div class="v" id="st-pause">0</div><div class="l">pauses ≥ 0.7 s</div></div>
+      <div class="stat"><div class="v" id="st-var">–</div><div class="l">pitch variety <span id="st-varlabel"></span></div></div>
+    </div>
+
+    <div id="live-transcript" class="transcript" aria-live="polite">Transcript appears here (Chrome / Edge / Safari).</div>
+    <div id="live-status" class="status-bar"></div>
+
+    <div class="controls"><button class="btn btn-record" id="btn-live" title="Start / stop">🎙</button></div>
+
+    <div id="live-summary" class="summary" hidden></div>
+  </div>
+</div>
+<script type="module" src="live.js"></script>
+</body>
+</html>
