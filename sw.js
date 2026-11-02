@@ -1,4 +1,4 @@
-const CACHE = 'voicetrain-v4';
+const CACHE = 'voicetrain-v6';
 const ASSETS = [
   './',
   './index.html',

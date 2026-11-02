@@ -33,6 +33,14 @@
     <div class="controls"><button class="btn btn-record" id="btn-live" title="Start / stop">🎙</button></div>
 
     <div id="live-summary" class="summary" hidden></div>
+    <div id="live-actions" hidden>
+      <button class="btn btn-primary" id="btn-live-feedback">&#10024; Get feedback on this talk</button>
+      <div id="live-feedback" class="status-bar" style="text-align:left;"></div>
+    </div>
+
+    <p class="section-title">Saved samples</p>
+    <div id="sample-list" class="sample-list"></div>
+    <div class="sample-note">Samples are saved on this device only, under your profile.</div>
   </div>
 </div>
 <script type="module" src="live.js"></script>

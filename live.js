@@ -1,3 +1,6 @@
+import { getCurrentProfileId } from './src/auth/profiles.js';
+import { saveRecording, getRecordingsForPrompt, deleteRecording, saveFeedback } from './src/db/recordings.js';
+import { getLiveFeedback, getModelLabel, getSelectedModel } from './src/services/ai.js';
 import { rmsDb, yin, semitoneStd, countFillers, wordCount, rollingWpm, paceLabel, findPauses } from './src/components/pitch.js';
 
 const $ = id => document.getElementById(id);
@@ -6,7 +9,7 @@ const WINDOW_MS = 12000;           // visible history
 const VOICED_DB = -45;             // below this = silence
 const FMIN = 70, FMAX = 400;       // pitch axis (Hz, log)
 
-let audioCtx, analyser, stream, raf, rec;
+let audioCtx, analyser, stream, raf, rec, mediaRec, mediaChunks = [], lastRecId = null, lastSession = null;
 let running = false, startMs = 0;
 let frames = [];                   // {t, db, hz, voiced}
 let wordEvents = [], finalText = '', interimText = '';
@@ -96,6 +99,17 @@ function startRecognition() {
   try { rec.start(); } catch {}
 }
 
+function startMediaRecorder() {
+  mediaChunks = []; mediaRec = null;
+  if (!window.MediaRecorder) return;
+  const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'].find(t => MediaRecorder.isTypeSupported(t)) || '';
+  try {
+    mediaRec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+    mediaRec.ondataavailable = e => { if (e.data && e.data.size) mediaChunks.push(e.data); };
+    mediaRec.start(1000);
+  } catch (e) { mediaRec = null; }
+}
+
 async function start() {
   try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }); }
   catch (e) { $('live-status').textContent = 'Microphone unavailable: ' + e.message; return; }
@@ -104,11 +118,12 @@ async function start() {
   audioCtx.createMediaStreamSource(stream).connect(analyser);
   frames = []; wordEvents = []; finalText = ''; interimText = ''; startMs = performance.now(); running = true;
   $('live-summary').hidden = true; $('live-status').textContent = ''; $('live-transcript').textContent = 'Listening…';
-  $('btn-live').classList.add('recording'); startRecognition(); tick();
+  $('btn-live').classList.add('recording'); startRecognition(); startMediaRecorder(); $('live-actions').hidden = true; $('live-feedback').innerHTML = ''; lastRecId = null; tick();
 }
 
 function stop() {
   running = false; cancelAnimationFrame(raf); try { rec && rec.stop(); } catch {}
+  const mr = mediaRec; if (mr && mr.state !== 'inactive') { try { mr.requestData(); mr.stop(); } catch {} }
   stream && stream.getTracks().forEach(t => t.stop()); audioCtx && audioCtx.close();
   $('btn-live').classList.remove('recording');
   const secs = (performance.now() - startMs) / 1000, words = wordCount(finalText);
@@ -122,7 +137,85 @@ function stop() {
     Possible fillers: ${nf}${nf ? ' (' + Object.entries(fills).map(([k, v]) => `${k} ×${v}`).join(', ') + ')' : ''}<br>
     Pauses ≥ 0.7 s: ${pauses.length}${longest ? `, longest ${(longest / 1000).toFixed(1)} s` : ''}<br>
     Pitch variety: ${sd ? sd.toFixed(1) + ' semitones' : 'not enough voiced audio'}`;
-  window.__lastSession = { secs, words, wpm, fillers: fills, pauses: pauses.length, pitchStd: sd };
+  lastSession = { secs, words, wpm, fillers: fills, pauses: pauses.length, longestPauseS: longest ? +(longest / 1000).toFixed(1) : 0, pitchStd: sd, transcript: finalText };
+  window.__lastSession = lastSession;
+  $('live-actions').hidden = false;
+  finishSample(secs);
 }
 
 $('btn-live').addEventListener('click', () => (running ? stop() : start()));
+
+// ── Saving samples (IndexedDB, same store as the prompt recordings, promptId "live") ──
+const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+function finishSample(secs) {
+  const mr = mediaRec;
+  if (!mr) { $('live-status').textContent = 'This browser cannot record audio, so the sample was not saved.'; return; }
+  const save = async () => {
+    const userId = getCurrentProfileId();
+    if (!userId) { $('live-status').textContent = 'Pick a profile on the home screen to save samples.'; return; }
+    if (secs < 3 || !mediaChunks.length) return;           // ignore accidental taps
+    const mimeType = mr.mimeType || mediaChunks[0].type || 'audio/webm';
+    const rec = {
+      id: crypto.randomUUID(), userId, promptId: 'live', category: 'live',
+      label: 'Live ' + new Date().toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }),
+      blob: new Blob(mediaChunks, { type: mimeType }), mimeType,
+      duration: Math.round(secs), timestamp: Date.now(),
+      wpm: lastSession.wpm || null, transcript: lastSession.transcript, metrics: { ...lastSession, transcript: undefined },
+      feedback: null,
+    };
+    try { await saveRecording(rec); lastRecId = rec.id; $('live-status').textContent = 'Sample saved.'; await renderSamples(); }
+    catch (e) { $('live-status').textContent = 'Could not save the sample: ' + e.message; }
+  };
+  if (mr.state === 'inactive') save(); else mr.addEventListener('stop', save, { once: true });
+}
+
+let objectUrls = [];
+async function renderSamples() {
+  const list = $('sample-list'); objectUrls.forEach(URL.revokeObjectURL); objectUrls = [];
+  const userId = getCurrentProfileId();
+  if (!userId) { list.innerHTML = '<div class="sample-note">Pick a profile on the home screen to save and see samples.</div>'; return; }
+  let recs = []; try { recs = await getRecordingsForPrompt(userId, 'live'); } catch {}
+  if (!recs.length) { list.innerHTML = '<div class="sample-note">No samples yet. Your talks are saved here automatically.</div>'; return; }
+  list.innerHTML = '';
+  for (const r of recs) {
+    const url = URL.createObjectURL(r.blob); objectUrls.push(url);
+    const el = document.createElement('div'); el.className = 'sample';
+    el.innerHTML = `<div class="top"><span>${esc(r.label)} · ${r.duration}s${r.wpm ? ' · ' + r.wpm + ' wpm' : ''}</span><button class="del" data-id="${esc(r.id)}">Delete</button></div>
+      <audio controls preload="none" src="${url}"></audio>
+      ${r.transcript ? `<div class="tx">${esc(r.transcript.slice(0, 140))}${r.transcript.length > 140 ? '…' : ''}</div>` : ''}
+      ${r.feedback ? `<div class="tx">💬 ${esc(r.feedback.overall)}</div>` : ''}`;
+    el.querySelector('.del').addEventListener('click', async () => {
+      if (!confirm('Delete this sample?')) return;
+      await deleteRecording(r.id); if (lastRecId === r.id) lastRecId = null; renderSamples();
+    });
+    list.appendChild(el);
+  }
+}
+
+// ── Feedback ──
+$('btn-live-feedback').addEventListener('click', async () => {
+  const out = $('live-feedback'), btn = $('btn-live-feedback');
+  if (!lastSession) return;
+  if (wordCount(lastSession.transcript) < 15) {
+    out.className = 'status-bar error';
+    out.textContent = lastSession.words ? 'Too short for structure feedback: speak for at least 15 words.' : 'No transcript was captured (speech recognition needs Chrome, Edge or Safari), so there is nothing to give structure feedback on.';
+    return;
+  }
+  btn.disabled = true; btn.textContent = 'Thinking… (can take up to a minute)'; out.className = 'status-bar'; out.textContent = '';
+  try {
+    const fb = await getLiveFeedback({ transcript: lastSession.transcript, metrics: lastSession });
+    const li = a => (Array.isArray(a) ? a : []).map(x => `<li>${esc(x)}</li>`).join('');
+    out.className = '';
+    out.innerHTML = `<div class="feedback-card"><div class="feedback-meta">via ${esc(getModelLabel(fb._model || getSelectedModel()))}</div>
+      <p class="feedback-overall">${esc(fb.overall)}</p>
+      <div class="feedback-group"><div class="feedback-group-title">🧭 Structure</div><p>${esc(fb.structure)}</p></div>
+      <div class="feedback-group"><div class="feedback-group-title">✅ Strengths</div><ul class="feedback-list">${li(fb.strengths)}</ul></div>
+      <div class="feedback-group"><div class="feedback-group-title">📈 To improve</div><ul class="feedback-list">${li(fb.improvements)}</ul></div>
+      <div class="feedback-tip">💡 ${esc(fb.tip)}</div></div>`;
+    if (lastRecId) { await saveFeedback(lastRecId, { ...fb, modelLabel: getModelLabel(fb._model || getSelectedModel()), timestamp: Date.now() }); renderSamples(); }
+  } catch (e) { out.className = 'status-bar error'; out.textContent = e.message; }
+  finally { btn.disabled = false; btn.innerHTML = '&#10024; Get feedback on this talk'; }
+});
+
+renderSamples();
