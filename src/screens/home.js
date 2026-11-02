@@ -41,7 +41,7 @@ export class HomeScreen {
 }
 
 export function bindHomeCards(el, router) {
-  el.querySelectorAll('.category-card').forEach(card => {
+  el.querySelectorAll('.category-card[data-cat]').forEach(card => {
     card.addEventListener('click', () => {
       const cat = card.dataset.cat;
       const count = PROMPTS[cat].length;

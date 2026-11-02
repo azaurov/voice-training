@@ -1,9 +1,13 @@
-const CACHE = 'voicetrain-v3';
+const CACHE = 'voicetrain-v4';
 const ASSETS = [
   './',
   './index.html',
   './styles.css',
   './app.js',
+  './live.html',
+  './live.js',
+  './live.css',
+  './src/components/pitch.js',
   './manifest.webmanifest',
   './icon-192.png',
   './icon-512.png',
